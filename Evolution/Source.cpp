@@ -23,8 +23,16 @@ struct animalStruct {
 	unsigned _int16 sporeRadius; //0-65k
 	bool male; //
 	unsigned _int8 pregnant; //0-255
+	unsigned _int8 gestation; //0-255 the pregnancy period
 	unsigned _int8 reproductionPersistance; //0-255
 	int theFather; //a spot to saave the name of the father for pregnant animals
+	int energy;
+	bool photosynthesis;
+	unsigned _int16 animalSize; //0-65k
+	unsigned _int16 birthSize; //0-65k
+	unsigned _int16 maxSize; //0-65k
+	int growthThreshold; //0-65k
+	unsigned _int16 sexualMaturity; //0-65k
 };
 
 vector<animalStruct> animals;
@@ -32,10 +40,17 @@ vector<animalStruct> animals;
 void addAnimal(
 	Point location, 
 	Vec3b colour, 
-	unsigned _int8 speed, 
 	unsigned _int8 sporeRadius, 
 	bool male, 
-	unsigned _int8 reproductionPersistance
+	unsigned _int8 reproductionPersistance,
+	int growthThreshold,
+	unsigned _int8 speed = 0,
+	int energy=1000,
+	unsigned _int8 gestation=100,
+	bool photosynthesis=true,
+	unsigned _int16 birthSize = 1,
+	unsigned _int16 maxSize = 1000,
+	unsigned _int16 sexualMaturity=100 //0-65k
 	)
 {
 	animals.push_back(animalStruct());
@@ -47,7 +62,14 @@ void addAnimal(
 	animals.back().pregnant = 0; //if 0, not preganant.
 	animals.back().reproductionPersistance = reproductionPersistance;
 	animals.back().theFather=-1;
-
+	animals.back().energy = energy;
+	animals.back().gestation = gestation;
+	animals.back().photosynthesis = photosynthesis;
+	animals.back().animalSize = birthSize;
+	animals.back().birthSize = birthSize;
+	animals.back().maxSize = maxSize;
+	animals.back().growthThreshold = growthThreshold;
+	animals.back().sexualMaturity = sexualMaturity;
 }
 
 int female(int i, int j)
@@ -103,9 +125,9 @@ Point freeLocation(Point p, unsigned attempts, unsigned radiusStart, unsigned ma
 	return Point(0, 0);
 }
 
-void mateAnimals(int i, int j, bool spore)
+void makeAnimals(int i, int j, bool spore)
 {
-	const unsigned noOfDNA = 6; // number of variables in the DNA chain
+	const unsigned noOfDNA = 9; // number of variables in the DNA chain
 	
 	uniform_int_distribution<unsigned> distribution(0, 999999999);
 	unsigned randNum = distribution(generator);
@@ -129,7 +151,7 @@ void mateAnimals(int i, int j, bool spore)
 		if spore == false then grow next to it if free
 	*/
 
-	if (spore == true) // if it has been fertilized by spores then the femal has seeds that can also fly
+	if (spore == true) // if it has been fertilized by spores then the female has seeds that can also fly
 	{
 		// find a random location within sporeRadius
 		Point newPoint = freeLocation(animals.back().location, animals[theFemale].reproductionPersistance, animals[theFemale].sporeRadius, animals[theFemale].sporeRadius);
@@ -146,7 +168,6 @@ void mateAnimals(int i, int j, bool spore)
 	else 
 	{
 		// find a random location within sporeRadius
-		
 		Point newPoint = freeLocation(animals[theFemale].location, animals[theFemale].reproductionPersistance, 0, animals[theFemale].sporeRadius);
 
 		// if we run out of attempts without finding a free spot then we die.
@@ -158,11 +179,20 @@ void mateAnimals(int i, int j, bool spore)
 		else
 			animals.back().location = newPoint;
 	}
-
+	/*
 	if (dna[0] == true)
 		animals.back().colour = animals[i].colour;
 	else
 		animals.back().colour = animals[j].colour;
+	*/
+
+	// sex directly from random bool
+	animals.back().male = dna[0];
+
+	if (animals.back().male == true)
+		animals.back().colour = Vec3b(0, 0, 255);
+	else animals.back().colour = Vec3b(0, 255, 0);
+
 	if (dna[1] == true)
 		animals.back().speed = animals[i].speed;
 	else
@@ -173,9 +203,6 @@ void mateAnimals(int i, int j, bool spore)
 	else
 		animals.back().sporeRadius = animals[j].sporeRadius;
 	
-	// sex directly from random bool
-	animals.back().male = dna[1];
-
 	//never born pregnant
 	animals.back().pregnant = 0;
 	animals.back().theFather = -1;
@@ -185,8 +212,38 @@ void mateAnimals(int i, int j, bool spore)
 	else
 		animals.back().reproductionPersistance = animals[j].reproductionPersistance;
 
-	//cout << dna[0] << ", " << dna[9] << endl;
+	if (dna[4] == true)
+		animals.back().gestation = animals[i].gestation;
+	else
+		animals.back().gestation = animals[j].gestation;
 
+	//new animal gets a starting energy relative to the pregnancy time
+	animals.back().energy = animals[i].gestation*10;
+
+	if (dna[5] == true)
+		animals.back().photosynthesis = animals[i].photosynthesis;
+	else
+		animals.back().photosynthesis = animals[j].photosynthesis;
+
+	// always born at size of birthsize. birthsize inherited from either parent
+	if (dna[6] == true)
+		animals.back().birthSize = animals[i].birthSize;
+	else
+		animals.back().birthSize = animals[j].birthSize;
+	animals.back().animalSize = animals.back().birthSize;
+	if (dna[7] == true)
+		animals.back().maxSize = animals[i].maxSize;
+	else
+		animals.back().maxSize = animals[j].maxSize;
+	if (dna[8] == true)
+		animals.back().growthThreshold = animals[i].growthThreshold;
+	else
+		animals.back().growthThreshold = animals[j].growthThreshold;
+
+	if (dna[9] == true)
+		animals.back().sexualMaturity = animals[i].sexualMaturity;
+	else
+		animals.back().sexualMaturity = animals[j].sexualMaturity;
 }
 
 void moveAnimal(int i)
@@ -195,31 +252,37 @@ void moveAnimal(int i)
 	int y1 = animals[i].location.y;
 	double dist = 999999999999999999;
 	int closest=-1;
-	for (int j = 0; j < animals.size(); j++)
+	// is i mature?
+	if (animals[i].animalSize > animals[i].sexualMaturity)
 	{
-		if (j == i)
-			continue;
-		if (animals[i].location == animals[j].location)
-			continue;
-		if (animals[i].male == animals[j].male || animals[j].pregnant > 0 || animals[i].pregnant > 0)
-			continue;
+		for (int j = 0; j < animals.size(); j++)
+		{
+			if (j == i)
+				continue;
+			if (animals[j].animalSize < animals[j].sexualMaturity)
+				continue;
+			// if either of the animals are not mature then they are not looking for a mate
+			if (animals[i].location == animals[j].location)
+				continue;
+			if (animals[i].male == animals[j].male || animals[j].pregnant > 0 || animals[i].pregnant > 0)
+				continue;
 
-		int x2 = animals[j].location.x;
-		int y2 = animals[j].location.y;
-		double dist_temp = sqrt(pow((y2 - y1),2) + pow((x2 - x1),2));
-		if (abs(dist_temp)<abs(dist))
-		{ 
-			closest = j;
-			dist = dist_temp;
+			int x2 = animals[j].location.x;
+			int y2 = animals[j].location.y;
+			double dist_temp = sqrt(pow((y2 - y1), 2) + pow((x2 - x1), 2));
+			if (abs(dist_temp)<abs(dist))
+			{
+				closest = j;
+				dist = dist_temp;
+			}
 		}
 	}
+	
 
 	int x2, y2;
 	if (closest == -1)
 	{
 		uniform_int_distribution<int> randPoint(-20, 20);
-		
-
 		// cant let the point be 0,0
 		int rand=0;
 		while (rand==0)
@@ -240,7 +303,7 @@ void moveAnimal(int i)
 	double xmultiplier = (x2 - x1) / dist;
 	double ymultiplier = (y2 - y1) / dist;
 	if (dist < animals[i].speed)
-		animals[i].location = animals[i].location + Point(xmultiplier * dist, ymultiplier * dist);
+		animals[i].location = Point(x2, y2);
 	else
 		animals[i].location = animals[i].location + Point(xmultiplier * animals[i].speed, ymultiplier * animals[i].speed);
 	
@@ -257,14 +320,37 @@ void moveAnimal(int i)
 
 void collision(int i, int j, bool spore)
 {
+	// Mating
 	int thefemale = female(i, j);
 	if (thefemale > -1 && animals[thefemale].pregnant == 0)
 	{
-		animals[thefemale].pregnant = 100;
+		animals[thefemale].pregnant = animals[thefemale].gestation;
 		animals[thefemale].theFather = male(i, j);
 	}
 		
 
+}
+
+void balanceEnergy(int animal, int n, int eatenAnimal=-1)
+{
+	if (n == 1) // Normal daily energy use
+	{
+		animals[animal].energy -= animals[animal].speed;
+		if (animals[animal].photosynthesis == true)
+			animals[animal].energy += 10;
+		if (animals[animal].energy > animals[animal].growthThreshold)
+		{
+			if (animals[animal].animalSize < animals[animal].growthThreshold)
+			{
+				animals[animal].animalSize += animals[animal].energy - animals[animal].growthThreshold;
+			}
+		}
+	}
+	if (n == 2) // eaten something
+		animals[animal].energy += animals[eatenAnimal].animalSize;
+	// death from exhaustion
+	if (animals[animal].energy < 1)
+		animals.erase (animals.begin()+animal);
 }
 
 int main()
@@ -272,8 +358,8 @@ int main()
 	Rect scenebox(0, 0, w, h);
 	Mat worldMap = cv::Mat(h, w, CV_8UC3, Vec3b(255,255,255));
 	circle(worldMap, Point(0, 0), 700, Vec3b(255, 0, 0), -1);
-	addAnimal(Point(200, 200), Vec3b(0, 200, 255),10, 5, 1, 10);
-	addAnimal(Point(1000, 500), Vec3b(100, 0, 255),10, 5, 0, 10);
+	addAnimal(Point(200, 200), Vec3b(0, 0, 255), 5, 0, 10, 2000,5);
+	addAnimal(Point(1000, 500), Vec3b(0, 255, 0), 5, 1, 10, 2200,5);
 	//addAnimal(Point(400, 500), Vec3b(0, 50, 255), 5, 1, 0);
 	//addAnimal(Point(700, 400), Vec3b(100, 100, 255), 3, 0, 0);
 	namedWindow("World Map", CV_WINDOW_AUTOSIZE);
@@ -288,11 +374,9 @@ int main()
 				animals[i].pregnant--;
 				if (animals[i].pregnant == 0)
 				{
-					mateAnimals(i, animals[i].theFather, false);
+					makeAnimals(i, animals[i].theFather, false);
 					animals[i].theFather = -1;
 				}
-					
-
 			}
 			moveAnimal(i);
 			// Check for collisions
@@ -300,6 +384,7 @@ int main()
 			if (j > -1)
 				collision(i, j, false);
 			circle(viewMap, animals[i].location, 3, animals[i].colour, -1);
+			balanceEnergy(i, 1);
 		}
 		imshow("World Map", viewMap);
 		waitKey(100);
