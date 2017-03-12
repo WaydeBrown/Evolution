@@ -378,7 +378,8 @@ int main()
 					animals[i].theFather = -1;
 				}
 			}
-			moveAnimal(i);
+			if (animals[i].speed>0)
+				moveAnimal(i);
 			// Check for collisions
 			int j = isVacant(animals[i].location, i);
 			if (j > -1)
