@@ -34,7 +34,8 @@ struct animalStruct {
 	int growthThreshold; //0-65k
 	unsigned _int16 sexualMaturity; //0-65k
 	bool asexual;
-	unsigned _int16 maxAge; //0-65k
+	unsigned _int16 maxAge;
+	unsigned _int16 animalAge;//0-65k
 };
 
 vector<animalStruct> animals;
@@ -54,7 +55,8 @@ void addAnimal(
 	unsigned _int16 maxSize = 1000,
 	unsigned _int16 sexualMaturity=100, //0-65k
 	bool asexual = true,
-	unsigned _int16 maxAge = 5000 //0-65k
+	unsigned _int16 maxAge = 1000, //0-65k
+	unsigned _int16 animalAge = 0 //0-65k
 	)
 {
 	animals.push_back(animalStruct());
@@ -76,6 +78,7 @@ void addAnimal(
 	animals.back().sexualMaturity = sexualMaturity;
 	animals.back().asexual = asexual;
 	animals.back().maxAge = maxAge;
+	animals.back().animalAge = animalAge;
 }
 
 int female(int i, int j)
@@ -275,6 +278,10 @@ void makeAnimals(int i, int j, bool spore)
 	else
 		animals.back().maxAge = animals[j].maxAge;
 
+	animals.back().animalAge = 0;
+
+
+
 }
 
 void moveAnimal(int i)
@@ -382,6 +389,9 @@ void balanceEnergy(int animal, int n, int eatenAnimal=-1)
 				animals[animal].animalSize = animals[animal].animalSize / 2;
 			}
 		}
+		animals[animal].animalAge++;
+		if (animals[animal].animalAge>animals[animal].maxAge)
+			animals.erase(animals.begin() + animal);
 	}
 	if (n == 2) // eaten something
 		animals[animal].energy += animals[eatenAnimal].animalSize;
@@ -392,6 +402,7 @@ void balanceEnergy(int animal, int n, int eatenAnimal=-1)
 
 int main()
 {
+	unsigned long long clockCycles = 0;
 	Rect scenebox(0, 0, w, h);
 	Mat worldMap = cv::Mat(h, w, CV_8UC3, Vec3b(255,255,255));
 	circle(worldMap, Point(0, 0), 700, Vec3b(255, 0, 0), -1);
@@ -429,6 +440,7 @@ int main()
 		}
 		imshow("World Map", viewMap);
 		waitKey(10);
-		cout << animals.size() << endl;
+		clockCycles++;
+		cout << "clockCycles: "<< clockCycles <<"   Animals:"<< animals.size() << endl;
 	}
 }
