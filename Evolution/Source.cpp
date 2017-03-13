@@ -33,6 +33,8 @@ struct animalStruct {
 	unsigned _int16 maxSize; //0-65k
 	int growthThreshold; //0-65k
 	unsigned _int16 sexualMaturity; //0-65k
+	bool asexual;
+	unsigned _int16 maxAge; //0-65k
 };
 
 vector<animalStruct> animals;
@@ -50,7 +52,9 @@ void addAnimal(
 	bool photosynthesis=true,
 	unsigned _int16 birthSize = 1,
 	unsigned _int16 maxSize = 1000,
-	unsigned _int16 sexualMaturity=100 //0-65k
+	unsigned _int16 sexualMaturity=100, //0-65k
+	bool asexual = true,
+	unsigned _int16 maxAge = 5000 //0-65k
 	)
 {
 	animals.push_back(animalStruct());
@@ -70,6 +74,8 @@ void addAnimal(
 	animals.back().maxSize = maxSize;
 	animals.back().growthThreshold = growthThreshold;
 	animals.back().sexualMaturity = sexualMaturity;
+	animals.back().asexual = asexual;
+	animals.back().maxAge = maxAge;
 }
 
 int female(int i, int j)
@@ -116,7 +122,7 @@ Point freeLocation(Point p, unsigned attempts, unsigned radiusStart, unsigned ma
 			Point trialPoint;
 			trialPoint.x = p.x + randPoint(generator);
 			trialPoint.y = p.y + randPoint(generator);
-			if (isVacant(trialPoint) > -1)
+			if (isVacant(trialPoint) == -1)
 			{
 				return trialPoint;
 			}
@@ -127,7 +133,7 @@ Point freeLocation(Point p, unsigned attempts, unsigned radiusStart, unsigned ma
 
 void makeAnimals(int i, int j, bool spore)
 {
-	const unsigned noOfDNA = 9; // number of variables in the DNA chain
+	const unsigned noOfDNA = 12; // number of variables in the DNA chain
 	
 	uniform_int_distribution<unsigned> distribution(0, 999999999);
 	unsigned randNum = distribution(generator);
@@ -157,6 +163,20 @@ void makeAnimals(int i, int j, bool spore)
 		Point newPoint = freeLocation(animals.back().location, animals[theFemale].reproductionPersistance, animals[theFemale].sporeRadius, animals[theFemale].sporeRadius);
 		
 		// if the seed lands where someone is already living -> too bad, its not going to grow.
+		if (newPoint == Point(0, 0))
+		{
+			animals.pop_back();
+			return;
+		}
+		else
+			animals.back().location = newPoint;
+	}
+	else if (i == j)//then we have asexual reproduction
+	{
+		// find a random location within sporeRadius
+		Point newPoint = freeLocation(animals[i].location, animals[i].reproductionPersistance, 0, animals[i].sporeRadius);
+
+		// if we run out of attempts without finding a free spot then we die.
 		if (newPoint == Point(0, 0))
 		{
 			animals.pop_back();
@@ -244,6 +264,17 @@ void makeAnimals(int i, int j, bool spore)
 		animals.back().sexualMaturity = animals[i].sexualMaturity;
 	else
 		animals.back().sexualMaturity = animals[j].sexualMaturity;
+
+	if (dna[10] == true)
+		animals.back().asexual = animals[i].asexual;
+	else
+		animals.back().asexual = animals[j].asexual;
+
+	if (dna[11] == true)
+		animals.back().maxAge = animals[i].maxAge;
+	else
+		animals.back().maxAge = animals[j].maxAge;
+
 }
 
 void moveAnimal(int i)
@@ -340,9 +371,15 @@ void balanceEnergy(int animal, int n, int eatenAnimal=-1)
 			animals[animal].energy += 10;
 		if (animals[animal].energy > animals[animal].growthThreshold)
 		{
-			if (animals[animal].animalSize < animals[animal].growthThreshold)
+			if (animals[animal].animalSize < animals[animal].maxSize)
 			{
 				animals[animal].animalSize += animals[animal].energy - animals[animal].growthThreshold;
+				animals[animal].energy = animals[animal].growthThreshold;
+			}
+			else if (animals[animal].asexual == true)
+			{
+				makeAnimals(animal, animal, false);
+				animals[animal].animalSize = animals[animal].animalSize / 2;
 			}
 		}
 	}
@@ -358,8 +395,8 @@ int main()
 	Rect scenebox(0, 0, w, h);
 	Mat worldMap = cv::Mat(h, w, CV_8UC3, Vec3b(255,255,255));
 	circle(worldMap, Point(0, 0), 700, Vec3b(255, 0, 0), -1);
-	addAnimal(Point(200, 200), Vec3b(0, 0, 255), 5, 0, 10, 2000,5);
-	addAnimal(Point(1000, 500), Vec3b(0, 255, 0), 5, 1, 10, 2200,5);
+	addAnimal(Point(200, 200), Vec3b(0, 0, 255), 5, 0, 10, 2000);
+	addAnimal(Point(1000, 500), Vec3b(0, 255, 0), 5, 1, 10, 2200);
 	//addAnimal(Point(400, 500), Vec3b(0, 50, 255), 5, 1, 0);
 	//addAnimal(Point(700, 400), Vec3b(100, 100, 255), 3, 0, 0);
 	namedWindow("World Map", CV_WINDOW_AUTOSIZE);
@@ -378,16 +415,20 @@ int main()
 					animals[i].theFather = -1;
 				}
 			}
-			if (animals[i].speed>0)
+			if (animals[i].speed > 0) 
+			{
 				moveAnimal(i);
-			// Check for collisions
-			int j = isVacant(animals[i].location, i);
-			if (j > -1)
-				collision(i, j, false);
+				// Check for collisions
+				int j = isVacant(animals[i].location, i);
+				if (j > -1)
+					collision(i, j, false);
+			}
+				
 			circle(viewMap, animals[i].location, 3, animals[i].colour, -1);
 			balanceEnergy(i, 1);
 		}
 		imshow("World Map", viewMap);
-		waitKey(100);
+		waitKey(10);
+		cout << animals.size() << endl;
 	}
 }
