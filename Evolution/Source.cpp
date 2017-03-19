@@ -6,11 +6,15 @@
 #include <random>
 #include <chrono>
 #include <array>
+#include <forward_list>
 
 using namespace std;
 using namespace cv;
 unsigned short w = 1300;
 unsigned short h = 800;
+vector<int> deadAnimals;
+vector<int> vacantEmbryo;
+
 
 // construct a trivial random generator engine from a time-based seed:
 unsigned seed = chrono::system_clock::now().time_since_epoch().count();
@@ -22,8 +26,8 @@ struct animalStruct {
 	unsigned _int8 speed; //0-255
 	unsigned _int16 sporeRadius; //0-65k
 	bool male; //
-	unsigned _int8 pregnant; //0-255
-	unsigned _int8 gestation; //0-255 the pregnancy period
+	unsigned _int16 pregnant; //0-65k
+	unsigned _int16 gestation; //0-65k the pregnancy period
 	unsigned _int8 reproductionPersistance; //0-255
 	int theFather; //a spot to saave the name of the father for pregnant animals
 	int energy;
@@ -33,13 +37,19 @@ struct animalStruct {
 	unsigned _int16 maxSize; //0-65k
 	int growthThreshold; //0-65k
 	unsigned _int16 sexualMaturity; //0-65k
+	bool asexual;
+	unsigned _int16 maxAge;
+	unsigned _int16 animalAge;//0-65k
+	bool alive; //is the animal alive or not
+	float species;
 };
 
 vector<animalStruct> animals;
+forward_list<animalStruct> embryo;
 
 void addAnimal(
 	Point location, 
-	Vec3b colour, 
+	Vec3b colour,
 	unsigned _int8 sporeRadius, 
 	bool male, 
 	unsigned _int8 reproductionPersistance,
@@ -50,7 +60,11 @@ void addAnimal(
 	bool photosynthesis=true,
 	unsigned _int16 birthSize = 1,
 	unsigned _int16 maxSize = 1000,
-	unsigned _int16 sexualMaturity=100 //0-65k
+	unsigned _int16 sexualMaturity=100, //0-65k
+	bool asexual = true,
+	unsigned _int16 maxAge = 800, //0-65k
+	unsigned _int16 animalAge = 0, //0-65k
+	bool alive=true
 	)
 {
 	animals.push_back(animalStruct());
@@ -70,6 +84,10 @@ void addAnimal(
 	animals.back().maxSize = maxSize;
 	animals.back().growthThreshold = growthThreshold;
 	animals.back().sexualMaturity = sexualMaturity;
+	animals.back().asexual = asexual;
+	animals.back().maxAge = maxAge;
+	animals.back().animalAge = animalAge;
+	animals.back().alive = alive;
 }
 
 int female(int i, int j)
@@ -108,6 +126,21 @@ int isVacant(Point p, int i =-1)
 // find a random location within radiusStart
 Point freeLocation(Point p, unsigned attempts, unsigned radiusStart, unsigned maxRadius)
 {
+	vector<vector<int>> locals;
+	for (int i = 0; i < animals.size(); i++)
+	{
+		int x2 = animals[i].location.x;
+		int y2 = animals[i].location.y;
+		//double dist_temp = sqrt(pow((y2 - p.y), 2) + pow((x2 - p.x), 2));
+		//if (abs(dist_temp)<maxRadius)
+		if (abs(x2-p.x)<= maxRadius && abs(y2 - p.y) <= maxRadius)
+		{
+			locals.emplace_back();
+			locals.back().push_back(i);
+			locals.back().push_back(x2);
+			locals.back().push_back(y2);
+		}
+	}
 	for (int i = radiusStart; i < maxRadius+1; i++)
 	{
 		for (int j = 0; j < attempts; j++)
@@ -116,32 +149,52 @@ Point freeLocation(Point p, unsigned attempts, unsigned radiusStart, unsigned ma
 			Point trialPoint;
 			trialPoint.x = p.x + randPoint(generator);
 			trialPoint.y = p.y + randPoint(generator);
-			if (isVacant(trialPoint) > -1)
+			
+			for (int k = 0; k < locals.size(); k++)
 			{
-				return trialPoint;
+				if (locals[k][1] == trialPoint.x && locals[k][2] == trialPoint.y)
+				{
+					break;
+				}
+				if (k==locals.size()-1)
+					return trialPoint;
 			}
 		}
 	}
-	return Point(0, 0);
+	return Point (0,0);
 }
 
 void makeAnimals(int i, int j, bool spore)
 {
-	const unsigned noOfDNA = 9; // number of variables in the DNA chain
 	
-	uniform_int_distribution<unsigned> distribution(0, 999999999);
-	unsigned randNum = distribution(generator);
+	const unsigned _int16 speedMax = 254;
+	const unsigned _int16 sporeRadiusMax=2000;
+	const unsigned _int16 gestationMax=10000;
+	const unsigned _int16 reproductionPersistanceMax=254;
+	const unsigned _int16 birthSizeMax=64000;
+	const unsigned _int16 maxSizeMax = 64000;
+	const unsigned _int16 growthThresholdMax = 64000;
+	const unsigned _int16 sexualMaturityMax = 64000;
+	const unsigned _int16 maxAgeMax = 64000;
 
+	const unsigned noOfDNA = 12; // number of variables in the DNA chain
 	int theFemale = female(i, j);
 	
-	bool dna[noOfDNA];
-	//for (auto& k : dna) 
-	for (unsigned k = 0; k<noOfDNA; k++)
-	{
-		dna[k] = randNum / (k+1) % 2;
-	}
 	// create the animal
-	animals.push_back(animalStruct());
+	// first check if there is a free spot in the vector
+	int newAnimal = -1;
+	
+	if (deadAnimals.size() > 0)
+	{
+		newAnimal = deadAnimals.back();
+		deadAnimals.pop_back();
+	}
+	else
+	{
+		animals.push_back(animalStruct());
+		newAnimal = animals.size() - 1;
+	}
+	
 	
 	// fill in its details
 
@@ -154,16 +207,32 @@ void makeAnimals(int i, int j, bool spore)
 	if (spore == true) // if it has been fertilized by spores then the female has seeds that can also fly
 	{
 		// find a random location within sporeRadius
-		Point newPoint = freeLocation(animals.back().location, animals[theFemale].reproductionPersistance, animals[theFemale].sporeRadius, animals[theFemale].sporeRadius);
+		Point newPoint = freeLocation(animals[newAnimal].location, animals[theFemale].reproductionPersistance, animals[theFemale].sporeRadius, animals[theFemale].sporeRadius);
 		
 		// if the seed lands where someone is already living -> too bad, its not going to grow.
 		if (newPoint == Point(0, 0))
 		{
-			animals.pop_back();
+			deadAnimals.push_back(newAnimal);
+			animals[newAnimal].alive=false;
 			return;
 		}
 		else
-			animals.back().location = newPoint;
+			animals[newAnimal].location = newPoint;
+	}
+	else if (i == j)//then we have asexual reproduction
+	{
+		// find a random location within sporeRadius
+		Point newPoint = freeLocation(animals[i].location, animals[i].reproductionPersistance, 1, animals[i].sporeRadius);
+
+		// if we run out of attempts without finding a free spot then we die.
+		if (newPoint == Point(0, 0))
+		{
+			deadAnimals.push_back(newAnimal);
+			animals[newAnimal].alive=false;
+			return;
+		}
+		else
+			animals[newAnimal].location = newPoint;
 	}
 	else 
 	{
@@ -173,77 +242,197 @@ void makeAnimals(int i, int j, bool spore)
 		// if we run out of attempts without finding a free spot then we die.
 		if (newPoint == Point(0, 0))
 		{
-			animals.pop_back();
+			deadAnimals.push_back(newAnimal);
+			animals[newAnimal].alive=false;
 			return;
 		}
 		else
-			animals.back().location = newPoint;
+			animals[newAnimal].location = newPoint;
 	}
-	/*
-	if (dna[0] == true)
-		animals.back().colour = animals[i].colour;
-	else
-		animals.back().colour = animals[j].colour;
-	*/
 
-	// sex directly from random bool
-	animals.back().male = dna[0];
-
-	if (animals.back().male == true)
-		animals.back().colour = Vec3b(0, 0, 255);
-	else animals.back().colour = Vec3b(0, 255, 0);
-
-	if (dna[1] == true)
-		animals.back().speed = animals[i].speed;
+	if (i == j)
+	{
+		Point newPoint = animals[newAnimal].location;
+		animals[newAnimal] = animals[i];
+		animals[newAnimal].location = newPoint;
+	}
 	else
-		animals.back().speed = animals[j].speed;
-	
-	if (dna[2] == true)
-		animals.back().sporeRadius = animals[i].sporeRadius;
-	else
-		animals.back().sporeRadius = animals[j].sporeRadius;
-	
+	{
+		uniform_int_distribution<unsigned> distribution(0, 999999999);
+		unsigned randNum = distribution(generator);
+		bool dna[noOfDNA];
+		//for (auto& k : dna) 
+		for (unsigned k = 0; k<noOfDNA; k++)
+		{
+			dna[k] = randNum / (k + 1) % 2;
+		}
+		/*
+		if (dna[0] == true)
+		animals[newAnimal].colour = animals[i].colour;
+		else
+		animals[newAnimal].colour = animals[j].colour;
+		*/
+
+		// sex directly from random bool
+		animals[newAnimal].male = dna[0];
+
+		if (dna[1] == true)
+			animals[newAnimal].speed = animals[i].speed;
+		else
+			animals[newAnimal].speed = animals[j].speed;
+
+		if (dna[2] == true)
+			animals[newAnimal].sporeRadius = animals[i].sporeRadius;
+		else
+			animals[newAnimal].sporeRadius = animals[j].sporeRadius;
+
+		if (dna[3] == true)
+			animals[newAnimal].reproductionPersistance = animals[i].reproductionPersistance;
+		else
+			animals[newAnimal].reproductionPersistance = animals[j].reproductionPersistance;
+
+		if (dna[4] == true)
+			animals[newAnimal].gestation = animals[i].gestation;
+		else
+			animals[newAnimal].gestation = animals[j].gestation;
+
+		if (dna[5] == true)
+			animals[newAnimal].photosynthesis = animals[i].photosynthesis;
+		else
+			animals[newAnimal].photosynthesis = animals[j].photosynthesis;
+
+		// always born at size of birthsize. birthsize inherited from either parent
+		if (dna[6] == true)
+			animals[newAnimal].birthSize = animals[i].birthSize;
+		else
+			animals[newAnimal].birthSize = animals[j].birthSize;
+		
+		if (dna[7] == true)
+			animals[newAnimal].maxSize = animals[i].maxSize;
+		else
+			animals[newAnimal].maxSize = animals[j].maxSize;
+		if (dna[8] == true)
+			animals[newAnimal].growthThreshold = animals[i].growthThreshold;
+		else
+			animals[newAnimal].growthThreshold = animals[j].growthThreshold;
+
+		if (dna[9] == true)
+			animals[newAnimal].sexualMaturity = animals[i].sexualMaturity;
+		else
+			animals[newAnimal].sexualMaturity = animals[j].sexualMaturity;
+
+		if (dna[10] == true)
+			animals[newAnimal].asexual = animals[i].asexual;
+		else
+			animals[newAnimal].asexual = animals[j].asexual;
+
+		if (dna[11] == true)
+			animals[newAnimal].maxAge = animals[i].maxAge;
+		else
+			animals[newAnimal].maxAge = animals[j].maxAge;
+	}
+	// some things generic to all newborns
 	//never born pregnant
-	animals.back().pregnant = 0;
-	animals.back().theFather = -1;
-
-	if (dna[3] == true)
-		animals.back().reproductionPersistance = animals[i].reproductionPersistance;
-	else
-		animals.back().reproductionPersistance = animals[j].reproductionPersistance;
-
-	if (dna[4] == true)
-		animals.back().gestation = animals[i].gestation;
-	else
-		animals.back().gestation = animals[j].gestation;
-
+	animals[newAnimal].pregnant = 0;
+	animals[newAnimal].theFather = -1;
+	animals[newAnimal].animalSize = animals[newAnimal].birthSize;
+	animals[newAnimal].animalAge = 0;
+	animals[newAnimal].alive = true;
 	//new animal gets a starting energy relative to the pregnancy time
-	animals.back().energy = animals[i].gestation*10;
+	animals[newAnimal].energy = animals[i].gestation * 10;
 
-	if (dna[5] == true)
-		animals.back().photosynthesis = animals[i].photosynthesis;
-	else
-		animals.back().photosynthesis = animals[j].photosynthesis;
-
-	// always born at size of birthsize. birthsize inherited from either parent
-	if (dna[6] == true)
-		animals.back().birthSize = animals[i].birthSize;
-	else
-		animals.back().birthSize = animals[j].birthSize;
-	animals.back().animalSize = animals.back().birthSize;
-	if (dna[7] == true)
-		animals.back().maxSize = animals[i].maxSize;
-	else
-		animals.back().maxSize = animals[j].maxSize;
-	if (dna[8] == true)
-		animals.back().growthThreshold = animals[i].growthThreshold;
-	else
-		animals.back().growthThreshold = animals[j].growthThreshold;
-
-	if (dna[9] == true)
-		animals.back().sexualMaturity = animals[i].sexualMaturity;
-	else
-		animals.back().sexualMaturity = animals[j].sexualMaturity;
+	// gene mutation!!
+	uniform_int_distribution<unsigned> distribution2(0, 100);
+	for (int n = 0; n < 2; n++)
+	{
+		unsigned randNum2 = distribution2(generator);
+		if (randNum2 == 0) {
+			if (n == 0 && animals[newAnimal].speed < speedMax)
+				animals[newAnimal].speed++;
+			else if (animals[newAnimal].speed>0)
+				animals[newAnimal].speed--;
+		}
+		else if (randNum2 == 1) {
+			if (n == 0 && animals[newAnimal].sporeRadius < sporeRadiusMax)
+				animals[newAnimal].sporeRadius++;
+			else  if (animals[newAnimal].sporeRadius>0)
+				animals[newAnimal].sporeRadius--;
+		}
+		else if (randNum2 == 2) {
+			if (n == 0 && animals[newAnimal].reproductionPersistance < reproductionPersistanceMax)
+				animals[newAnimal].reproductionPersistance++;
+			else  if (animals[newAnimal].reproductionPersistance>0)
+				animals[newAnimal].reproductionPersistance--;
+		}
+		else if (randNum2 == 3) {
+			if (n == 0 && animals[newAnimal].gestation < gestationMax)
+				animals[newAnimal].gestation++;
+			else  if (animals[newAnimal].gestation>0)
+				animals[newAnimal].gestation--;
+		}
+		else if (randNum2 == 4) {
+			if (n == 0)
+				animals[newAnimal].photosynthesis=true;
+			else animals[newAnimal].photosynthesis=false;
+		}
+		else if (randNum2 == 5) {
+			if (n == 0 && animals[newAnimal].birthSize < birthSizeMax)
+				animals[newAnimal].birthSize++;
+			else  if (animals[newAnimal].birthSize>0)
+				animals[newAnimal].birthSize--;
+		}
+		else if (randNum2 == 6) {
+			if (n == 0 && animals[newAnimal].maxSize < maxSizeMax)
+				animals[newAnimal].maxSize++;
+			else  if (animals[newAnimal].maxSize>0)
+				animals[newAnimal].maxSize--;
+		}
+		else if (randNum2 == 7) {
+			if (n == 0 && animals[newAnimal].growthThreshold < growthThresholdMax)
+				animals[newAnimal].growthThreshold++;
+			else if (animals[newAnimal].growthThreshold>0)
+				animals[newAnimal].growthThreshold--;
+		}
+		else if (randNum2 == 8) {
+			if (n == 0 && animals[newAnimal].sexualMaturity < sexualMaturityMax)
+				animals[newAnimal].sexualMaturity++;
+			else if (animals[newAnimal].sexualMaturity>0)
+				animals[newAnimal].sexualMaturity--;
+		}
+		else if (randNum2 == 9) {
+			if (n == 0)
+				animals[newAnimal].asexual=true;
+			else animals[newAnimal].asexual=false;
+		}
+		else if (randNum2 == 10) {
+			if (n == 0 && animals[newAnimal].maxAge < maxAgeMax)
+				animals[newAnimal].maxAge++;
+			else if (animals[newAnimal].maxAge>0)
+				animals[newAnimal].maxAge--;
+		}
+		
+		animals[newAnimal].species = (
+			animals[newAnimal].speed +
+			animals[newAnimal].sporeRadius +
+			animals[newAnimal].gestation +
+			animals[newAnimal].reproductionPersistance +
+			animals[newAnimal].birthSize +
+			animals[newAnimal].maxSize +
+			animals[newAnimal].growthThreshold +
+			animals[newAnimal].sexualMaturity +
+			animals[newAnimal].maxAge+0.1) / (
+				speedMax +
+				sporeRadiusMax +
+				gestationMax +
+				reproductionPersistanceMax +
+				birthSizeMax +
+				maxSizeMax +
+				growthThresholdMax +
+				sexualMaturityMax +
+				maxAgeMax+0.1);
+		//int(animals[newAnimal].species * 180)
+		animals[newAnimal].colour = Vec3b(70,255,255);
+	}
 }
 
 void moveAnimal(int i)
@@ -305,7 +494,7 @@ void moveAnimal(int i)
 	if (dist < animals[i].speed)
 		animals[i].location = Point(x2, y2);
 	else
-		animals[i].location = animals[i].location + Point(xmultiplier * animals[i].speed, ymultiplier * animals[i].speed);
+		animals[i].location = animals[i].location + Point(xmultiplier * (animals[i].speed+1), ymultiplier * (animals[i].speed+1));
 	
 	// Make sure the animal hasent gone outside the boundaries
 	if (animals[i].location.x < 0)
@@ -340,28 +529,45 @@ void balanceEnergy(int animal, int n, int eatenAnimal=-1)
 			animals[animal].energy += 10;
 		if (animals[animal].energy > animals[animal].growthThreshold)
 		{
-			if (animals[animal].animalSize < animals[animal].growthThreshold)
+			if (animals[animal].animalSize < animals[animal].maxSize)
 			{
 				animals[animal].animalSize += animals[animal].energy - animals[animal].growthThreshold;
+				animals[animal].energy = animals[animal].growthThreshold;
 			}
+			else if (animals[animal].asexual == true)
+			{
+				makeAnimals(animal, animal, false);
+				animals[animal].animalSize = animals[animal].animalSize / 2;
+			}
+		}
+		animals[animal].animalAge++;
+		if (animals[animal].animalAge > animals[animal].maxAge)
+		{
+			deadAnimals.push_back(animal);
+			animals[animal].alive = false;
 		}
 	}
 	if (n == 2) // eaten something
 		animals[animal].energy += animals[eatenAnimal].animalSize;
 	// death from exhaustion
 	if (animals[animal].energy < 1)
-		animals.erase (animals.begin()+animal);
+	{
+		deadAnimals.push_back(animal);
+		animals[animal].alive = false;
+	}
 }
 
 int main()
 {
+	unsigned long clockCycles = 0;
 	Rect scenebox(0, 0, w, h);
-	Mat worldMap = cv::Mat(h, w, CV_8UC3, Vec3b(255,255,255));
-	circle(worldMap, Point(0, 0), 700, Vec3b(255, 0, 0), -1);
-	addAnimal(Point(200, 200), Vec3b(0, 0, 255), 5, 0, 10, 2000,5);
-	addAnimal(Point(1000, 500), Vec3b(0, 255, 0), 5, 1, 10, 2200,5);
-	//addAnimal(Point(400, 500), Vec3b(0, 50, 255), 5, 1, 0);
-	//addAnimal(Point(700, 400), Vec3b(100, 100, 255), 3, 0, 0);
+	
+	Mat worldMap = Mat(h, w, CV_8UC3, Vec3b(60, 50, 255));
+	circle(worldMap, Point(0, 0), 700, Vec3b(110,50,255), -1);
+
+	addAnimal(Point(200, 200), Vec3b(20, 255, 255), 1, 0, 10, 2000);
+	//addAnimal(Point(1000, 500), Vec3b(120, 255, 255), 5, 1, 10, 2200);
+
 	namedWindow("World Map", CV_WINDOW_AUTOSIZE);
 	while (1)
 	{
@@ -369,6 +575,10 @@ int main()
 		worldMap.copyTo(viewMap);
 		for (int i = 0; i < animals.size(); i++)
 		{
+			if (animals[i].alive == false)
+			{
+				continue;
+			}
 			if (animals[i].pregnant > 0)
 			{
 				animals[i].pregnant--;
@@ -378,16 +588,22 @@ int main()
 					animals[i].theFather = -1;
 				}
 			}
-			if (animals[i].speed>0)
+			if (animals[i].speed > 0) 
+			{
 				moveAnimal(i);
-			// Check for collisions
-			int j = isVacant(animals[i].location, i);
-			if (j > -1)
-				collision(i, j, false);
+				// Check for collisions
+				int j = isVacant(animals[i].location, i);
+				if (j > -1)
+					collision(i, j, false);
+			}
+			
 			circle(viewMap, animals[i].location, 3, animals[i].colour, -1);
 			balanceEnergy(i, 1);
 		}
+		cvtColor(viewMap, viewMap, CV_HSV2BGR);
 		imshow("World Map", viewMap);
-		waitKey(100);
+		waitKey(10);
+		clockCycles++;
+		cout << "clockCycles: "<< clockCycles <<"   Animals:"<< animals.size() << "  Dead: "<< deadAnimals.size()<< endl;
 	}
 }
